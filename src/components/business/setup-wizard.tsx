@@ -34,7 +34,7 @@ const MODEL_TO_TEMPLATE: Record<string, BusinessTemplateKey> = {
 // ─── Module suggestions per model ─────────────────────────────────────────────
 const MODEL_MODULES: Record<string, string[]> = {
   retail:  ['inventory', 'sales', 'customers', 'reports', 'notifications'],
-  service: ['laundry_services', 'laundry_orders', 'customers', 'reports', 'notifications'],
+  service: ['services', 'orders', 'customers', 'reports', 'notifications'],
   rental:  ['rooms', 'tenants', 'billing', 'reports', 'notifications'],
 }
 
@@ -44,8 +44,8 @@ const MODULE_CATALOGUE = [
   { key: 'inventory',        label: 'Inventory',      description: 'Track products, stock levels, and reorder points.',       icon: Package },
   { key: 'sales',            label: 'Sales',          description: 'Record sales transactions and collect payments.',         icon: ShoppingCart },
   { key: 'customers',        label: 'Customers',      description: 'Manage customer profiles and outstanding balances.',      icon: Users },
-  { key: 'laundry_services', label: 'Services',       description: 'Define your service catalogue and pricing.',              icon: Wrench },
-  { key: 'laundry_orders',   label: 'Orders',         description: 'Track service orders from intake to completion.',        icon: ClipboardList },
+  { key: 'services',         label: 'Services',       description: 'Define your service catalogue and pricing.',              icon: Wrench },
+  { key: 'orders',           label: 'Orders',         description: 'Track service orders from intake to completion.',        icon: ClipboardList },
   { key: 'rooms',            label: 'Rooms',          description: 'Manage rentable rooms, units, or spaces.',               icon: DoorOpen },
   { key: 'tenants',          label: 'Tenants',        description: 'Track tenant records and lease agreements.',             icon: User },
   { key: 'billing',          label: 'Billing',        description: 'Generate bills, track payments, and overdue rent.',      icon: CreditCard },
@@ -62,13 +62,36 @@ const MODEL_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
 
 // Examples shown under each model card
 const MODEL_EXAMPLES: Record<string, string> = {
-  retail:  'e.g. Sari-Sari Store, Mini Mart, Pharmacy, Hardware',
-  service: 'e.g. Laundry Shop, Salon, Repair Shop, Accounting Firm',
+  retail:  'e.g. Mini Mart, Pharmacy, Hardware, Grocery',
+  service: 'e.g. Salon, Repair Shop, Accounting Firm, Cleaning Service',
   rental:  'e.g. Apartment, Boarding House, Car Rental, Parking',
 }
 
 // Display order for models (DB returns alphabetical, we override)
 const MODEL_ORDER = ['retail', 'service', 'rental']
+
+const getRecommendedModuleKeys = (models: string[]) => {
+  const keys = new Set<string>()
+  models.forEach(m => (MODEL_MODULES[m] ?? []).forEach(k => keys.add(k)))
+  return Array.from(keys)
+}
+
+// Keep temporary diagnostics serializable so Next devtools does not collapse
+// Supabase/PostgREST errors to "{}".
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const serializeSupabaseError = (error: any) => {
+  if (!error) return null
+
+  return {
+    name: error.name ?? null,
+    message: error.message ?? null,
+    code: error.code ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+    status: error.status ?? null,
+    statusText: error.statusText ?? null,
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -131,21 +154,15 @@ export function SetupWizard() {
   }, [])
 
   // ── Compute recommended modules from selected models ───────────────────────
-  const recommendedKeys = useMemo(() => {
-    const keys = new Set<string>()
-    selectedModels.forEach(m => (MODEL_MODULES[m] ?? []).forEach(k => keys.add(k)))
-    return Array.from(keys)
-  }, [selectedModels])
+  const recommendedKeys = useMemo(
+    () => getRecommendedModuleKeys(selectedModels),
+    [selectedModels]
+  )
 
   const additionalModules = useMemo(
     () => MODULE_CATALOGUE.filter(m => !recommendedKeys.includes(m.key)),
     [recommendedKeys]
   )
-
-  // Re-seed module selection whenever model selection changes
-  useEffect(() => {
-    setSelectedModules(recommendedKeys)
-  }, [recommendedKeys])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -154,10 +171,13 @@ export function SetupWizard() {
     setStep(2)
   }
 
-  const toggleModel = (key: string) =>
-    setSelectedModels(prev =>
-      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
-    )
+  const toggleModel = (key: string) => {
+    const nextModels = selectedModels.includes(key)
+      ? selectedModels.filter(k => k !== key)
+      : [...selectedModels, key]
+    setSelectedModels(nextModels)
+    setSelectedModules(getRecommendedModuleKeys(nextModels))
+  }
 
   const toggleModule = (key: string) =>
     setSelectedModules(prev =>
@@ -170,8 +190,47 @@ export function SetupWizard() {
 
     try {
       const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/auth/login'); return }
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser()
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
+
+      console.info('[onboarding] authenticated user', {
+        userId: user?.id ?? null,
+        sessionUserId: session?.user.id ?? null,
+        hasAccessToken: Boolean(session?.access_token),
+        authError: serializeSupabaseError(authError),
+        sessionError: serializeSupabaseError(sessionError),
+      })
+
+      if (authError || !user) {
+        console.info('[onboarding] getUser failed', {
+          authError: serializeSupabaseError(authError),
+          user,
+        })
+        setSubmitting(false)
+        router.push('/auth/login')
+        return
+      }
+
+      if (sessionError || !session?.access_token || session.user.id !== user.id) {
+        console.info('[onboarding] session validation failed', {
+          userId: user.id,
+          sessionUserId: session?.user.id ?? null,
+          hasAccessToken: Boolean(session?.access_token),
+          sessionError: serializeSupabaseError(sessionError),
+        })
+        setSubmitting(false)
+        router.push('/auth/login')
+        return
+      }
+
+      const authenticatedUserId = user.id
+      const authorizationHeader = `Bearer ${session.access_token}`
 
       // UUID v4 via getRandomValues — works on HTTP (randomUUID requires HTTPS)
       const bytes = crypto.getRandomValues(new Uint8Array(16))
@@ -183,37 +242,119 @@ export function SetupWizard() {
       // Derive legacy template_key from primary (first) model for backward compat
       const templateKey: BusinessTemplateKey = MODEL_TO_TEMPLATE[selectedModels[0]] ?? 'sari_sari'
 
+      const businessPayload = {
+        id: businessId,
+        name: step1Data.name,
+        template_key: templateKey,
+        address: step1Data.address || null,
+        contact_number: step1Data.contact_number || null,
+        created_by: authenticatedUserId,
+      }
+
+      const memberPayload = {
+        business_id: businessId,
+        user_id: authenticatedUserId,
+        role: 'owner' as const,
+      }
+
+      const modelPayloads = selectedModels.map((model_key: string) => ({
+        business_id: businessId,
+        model_key,
+      }))
+
+      const modulePayloads = selectedModules.map(module_key => ({
+        business_id: businessId,
+        module_key,
+        is_enabled: true,
+      }))
+
+      const orderStatusPayloads = [
+        { business_id: businessId, name: 'Received', sort_order: 10, color: 'blue', is_default: true },
+        { business_id: businessId, name: 'In Progress', sort_order: 20, color: 'yellow', is_default: false },
+        { business_id: businessId, name: 'Ready', sort_order: 30, color: 'green', is_default: false },
+        { business_id: businessId, name: 'Completed', sort_order: 40, color: 'slate', is_default: false },
+      ]
+
+      console.info('[onboarding] insert payloads', {
+        userId: authenticatedUserId,
+        businesses: businessPayload,
+        business_users: memberPayload,
+        business_business_models: modelPayloads,
+        business_modules: modulePayloads,
+        order_statuses: selectedModules.includes('orders') ? orderStatusPayloads : [],
+      })
+
       // 1. Create business
       const { error: bizError } = await supabase
         .from('businesses')
-        .insert({
-          id: businessId,
-          name: step1Data.name,
-          template_key: templateKey,
-          address: step1Data.address || null,
-          contact_number: step1Data.contact_number || null,
-          created_by: user.id,
+        .insert(businessPayload)
+        .setHeader('Authorization', authorizationHeader)
+      if (bizError) {
+        console.info('[onboarding] businesses insert failed', {
+          userId: authenticatedUserId,
+          payload: businessPayload,
+          error: serializeSupabaseError(bizError),
         })
-      if (bizError) throw new Error(`Could not create business: ${bizError.message}`)
+        throw new Error(`Could not create business: ${bizError.message}`)
+      }
 
       // 2. Owner membership
       const { error: memberError } = await supabase
         .from('business_users')
-        .insert({ business_id: businessId, user_id: user.id, role: 'owner' })
-      if (memberError) throw new Error(`Could not assign owner role: ${memberError.message}`)
+        .insert(memberPayload)
+        .setHeader('Authorization', authorizationHeader)
+      if (memberError) {
+        console.info('[onboarding] business_users insert failed', {
+          userId: authenticatedUserId,
+          payload: memberPayload,
+          error: serializeSupabaseError(memberError),
+        })
+        throw new Error(`Could not assign owner role: ${memberError.message}`)
+      }
 
       // 3. Business model associations (one row per selected model)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: modelsError } = await (supabase as any)
         .from('business_business_models')
-        .insert(selectedModels.map((model_key: string) => ({ business_id: businessId, model_key })))
-      if (modelsError) throw new Error(`Could not save business models: ${modelsError.message}`)
+        .insert(modelPayloads)
+        .setHeader('Authorization', authorizationHeader)
+      if (modelsError) {
+        console.info('[onboarding] business_business_models insert failed', {
+          userId: authenticatedUserId,
+          payload: modelPayloads,
+          error: serializeSupabaseError(modelsError),
+        })
+        throw new Error(`Could not save business models: ${modelsError.message}`)
+      }
 
       // 4. Provision selected modules
       const { error: modulesError } = await supabase
         .from('business_modules')
-        .insert(selectedModules.map(module_key => ({ business_id: businessId, module_key, is_enabled: true })))
-      if (modulesError) throw new Error(`Could not provision modules: ${modulesError.message}`)
+        .insert(modulePayloads)
+        .setHeader('Authorization', authorizationHeader)
+      if (modulesError) {
+        console.info('[onboarding] business_modules insert failed', {
+          userId: authenticatedUserId,
+          payload: modulePayloads,
+          error: serializeSupabaseError(modulesError),
+        })
+        throw new Error(`Could not provision modules: ${modulesError.message}`)
+      }
+
+      if (selectedModules.includes('orders')) {
+        const { error: statusesError } = await supabase
+          .from('order_statuses')
+          .insert(orderStatusPayloads)
+          .setHeader('Authorization', authorizationHeader)
+        if (statusesError) {
+          console.info('[onboarding] order_statuses insert failed', {
+            userId: authenticatedUserId,
+            payload: orderStatusPayloads,
+            error: serializeSupabaseError(statusesError),
+          })
+          throw new Error(`Could not configure order statuses: ${statusesError.message}`)
+        }
+      }
 
       toast.success(`${step1Data.name} is ready!`)
       setStep(4)

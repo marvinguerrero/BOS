@@ -1,11 +1,14 @@
 // ─── Core Domain Types ────────────────────────────────────────────────────────
 
-export type UserRole = 'owner' | 'manager' | 'staff'
+export type UserRole = 'owner' | 'manager' | 'staff' | 'viewer'
+export type RelationshipType = 'owner' | 'employee' | 'customer' | 'tenant' | 'supplier_contact'
 export type BusinessTemplateKey = 'sari_sari' | 'laundry' | 'room_rental'
 export type ModuleKey =
   | 'inventory'
   | 'sales'
   | 'customers'
+  | 'services'
+  | 'orders'
   | 'laundry_services'
   | 'laundry_orders'
   | 'rooms'
@@ -47,8 +50,73 @@ export interface BusinessUser {
   business_id: string
   user_id: string
   role: UserRole
+  relationship_type: RelationshipType | null
+  position_id: string | null
+  is_active: boolean
+  membership_status: MembershipStatus
+  joined_at: string | null
+  archived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Position {
+  id: string
+  business_id: string
+  name: string
+  description: string | null
   is_active: boolean
   created_at: string
+  updated_at: string
+}
+
+export type InviteStatus = 'none' | 'pending' | 'accepted' | 'revoked'
+export type InvitationStatus = 'pending' | 'accepted' | 'declined' | 'expired' | 'cancelled'
+export type BusinessPersonStatus = 'invited' | 'active' | 'inactive' | 'archived'
+export type MembershipStatus = 'active' | 'inactive' | 'archived'
+
+export interface BusinessPerson {
+  id: string
+  business_id: string
+  user_id: string | null
+  business_user_id: string | null
+  name: string
+  email: string | null
+  mobile_number: string | null
+  relationship_type: RelationshipType
+  role: UserRole | null
+  position_id: string | null
+  is_active: boolean
+  invite_status: InviteStatus
+  status: BusinessPersonStatus
+  archived_at: string | null
+  scheduling_settings: Record<string, unknown>
+  payroll_settings: Record<string, unknown>
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  position?: Position | null
+}
+
+export interface BusinessInvitation {
+  id: string
+  business_id: string
+  email: string
+  relationship_type: RelationshipType
+  role: UserRole
+  position_id: string | null
+  status: InvitationStatus
+  expires_at: string
+  created_by: string
+  accepted_by: string | null
+  accepted_at: string | null
+  declined_at: string | null
+  email_sent_at: string | null
+  email_delivery_status: 'queued' | 'sent' | 'failed' | 'not_configured'
+  created_at: string
+  updated_at: string
+  business?: Pick<Business, 'id' | 'name'> | null
+  position?: Position | null
 }
 
 export interface Template {
@@ -119,7 +187,7 @@ export interface Notification {
   created_at: string
 }
 
-// ─── Sari-Sari Store Types ────────────────────────────────────────────────────
+// ─── Retail Types ─────────────────────────────────────────────────────────────
 
 export interface Category {
   id: string
@@ -159,6 +227,7 @@ export interface Customer {
 export type PaymentMethod = 'cash' | 'gcash' | 'maya' | 'credit' | 'bank_transfer'
 export type SaleStatus = 'completed' | 'voided' | 'refunded'
 export type FinancialAccountType = 'cash' | 'ewallet' | 'bank' | 'receivable'
+export type CustomerType = 'walk_in' | 'guest' | 'registered'
 
 export interface FinancialAccount {
   id: string
@@ -208,7 +277,9 @@ export interface Sale {
   payment_status: SalePaymentStatus
   amount_paid: number
   balance_amount: number
+  customer_type: CustomerType
   customer_name_snapshot: string | null
+  customer_mobile_snapshot: string | null
   tax_amount: number
   voided_at: string | null
   voided_by: string | null
@@ -264,19 +335,63 @@ export interface InventoryMovement {
   created_at: string
 }
 
-// ─── Laundry Types ────────────────────────────────────────────────────────────
+// ─── Services and Orders Types ────────────────────────────────────────────────
 
-export interface LaundryService {
+export interface Service {
   id: string
   business_id: string
   name: string
-  pricing_type: 'fixed' | 'per_kg'
+  description: string | null
   price: number
+  duration_minutes: number | null
   is_active: boolean
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export type LaundryService = Service & {
+  pricing_type?: 'fixed' | 'per_kg'
+}
+
+export interface OrderStatus {
+  id: string
+  business_id: string
+  name: string
+  sort_order: number
+  color: string | null
+  is_default: boolean
   created_at: string
 }
 
-export type LaundryOrderStatus = 'received' | 'washing' | 'drying' | 'ready' | 'claimed'
+export type LaundryOrderStatus = 'received' | 'washing' | 'drying' | 'ready' | 'claimed' | string
+
+export interface Order {
+  id: string
+  business_id: string
+  customer_id: string | null
+  customer_type: CustomerType
+  customer_name: string | null
+  customer_contact: string | null
+  customer_name_snapshot: string | null
+  customer_mobile_snapshot: string | null
+  assigned_to_person_id: string | null
+  assigned_position_id: string | null
+  service_id: string | null
+  status_id: string | null
+  total_amount: number
+  notes: string | null
+  received_at: string
+  completed_at: string | null
+  created_by: string
+  metadata: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  service?: Service
+  order_status?: OrderStatus
+  assigned_person?: BusinessPerson | null
+  assigned_position?: Position | null
+}
 
 export interface LaundryOrder {
   id: string
@@ -285,11 +400,11 @@ export interface LaundryOrder {
   customer_name: string
   customer_contact: string | null
   service_id: string
-  weight_kg: number | null
   total_amount: number
-  status: LaundryOrderStatus
   notes: string | null
   received_at: string
+  weight_kg: number | null
+  status: LaundryOrderStatus
   ready_at: string | null
   claimed_at: string | null
   created_by: string
@@ -298,7 +413,7 @@ export interface LaundryOrder {
   service?: LaundryService
 }
 
-// ─── Room Rental Types ────────────────────────────────────────────────────────
+// ─── Rental Types ─────────────────────────────────────────────────────────────
 
 export type RoomStatus = 'available' | 'occupied' | 'maintenance'
 

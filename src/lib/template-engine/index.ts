@@ -13,6 +13,8 @@ const MODULE_PERMISSIONS: Record<string, UserRole[]> = {
   inventory:         ['owner', 'manager'],
   sales:             ['owner', 'manager', 'staff'],
   customers:         ['owner', 'manager', 'staff'],
+  services:          ['owner', 'manager'],
+  orders:            ['owner', 'manager', 'staff'],
   laundry_services:  ['owner', 'manager'],
   laundry_orders:    ['owner', 'manager', 'staff'],
   rooms:             ['owner', 'manager'],
@@ -23,8 +25,27 @@ const MODULE_PERMISSIONS: Record<string, UserRole[]> = {
   settings:          ['owner'],
 }
 
+const LEGACY_MODULE_ALIASES: Record<string, ModuleKey> = {
+  laundry_services: 'services',
+  laundry_orders: 'orders',
+}
+
+const LEGACY_HREF_ALIASES: Record<string, string> = {
+  '/laundry/services': '/services',
+  '/laundry/orders': '/orders',
+  '/laundry/orders/new': '/orders/new',
+}
+
+function normalizeModuleKey(module: string): string {
+  return LEGACY_MODULE_ALIASES[module] ?? module
+}
+
+function normalizeNavigationHref(href: string): string {
+  return LEGACY_HREF_ALIASES[href] ?? href
+}
+
 export function canAccessModule(module: string, role: UserRole): boolean {
-  const allowed = MODULE_PERMISSIONS[module]
+  const allowed = MODULE_PERMISSIONS[normalizeModuleKey(module)]
   if (!allowed) return false
   return allowed.includes(role)
 }
@@ -56,10 +77,12 @@ export function getNavigation(config: TemplateConfig, role: UserRole, businessId
     })
     .map(item => ({
       ...item,
-      href: `/${businessId}${item.href}`,
+      module: item.module ? normalizeModuleKey(item.module) as ModuleKey : undefined,
+      href: `/${businessId}${normalizeNavigationHref(item.href)}`,
       children: item.children?.map(child => ({
         ...child,
-        href: `/${businessId}${child.href}`,
+        module: child.module ? normalizeModuleKey(child.module) as ModuleKey : undefined,
+        href: `/${businessId}${normalizeNavigationHref(child.href)}`,
       })),
     }))
 }
@@ -73,7 +96,7 @@ export function getDashboardWidgets(config: TemplateConfig): DashboardWidgetConf
 export function getDefaultModulesForTemplate(templateKey: BusinessTemplateKey): ModuleKey[] {
   const moduleMap: Record<BusinessTemplateKey, ModuleKey[]> = {
     sari_sari:   ['inventory', 'sales', 'customers', 'reports', 'notifications'],
-    laundry:     ['laundry_services', 'laundry_orders', 'customers', 'reports', 'notifications'],
+    laundry:     ['services', 'orders', 'customers', 'reports', 'notifications'],
     room_rental: ['rooms', 'tenants', 'billing', 'reports', 'notifications'],
   }
   return moduleMap[templateKey] ?? []
@@ -81,9 +104,9 @@ export function getDefaultModulesForTemplate(templateKey: BusinessTemplateKey): 
 
 export function getTemplateLabel(key: BusinessTemplateKey): string {
   const labels: Record<BusinessTemplateKey, string> = {
-    sari_sari:   'Sari-Sari Store',
-    laundry:     'Laundry Shop',
-    room_rental: 'Room Rental',
+    sari_sari:   'Retail',
+    laundry:     'Service',
+    room_rental: 'Rental',
   }
   return labels[key]
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useParams } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ShoppingCart, Receipt, Package, Users, BarChart2,
   Bell, Settings, ClipboardList, Layers, DoorOpen, CreditCard, X, Plus,
@@ -14,6 +14,23 @@ import type { NavigationItem } from '@/types'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+
+// Maps a nav item's module key to the view permission that gates it.
+const MODULE_PERMISSION: Record<string, string> = {
+  sales:            'sales.view',
+  inventory:        'inventory.view',
+  customers:        'customers.view',
+  orders:           'orders.view',
+  services:         'services.view',
+  laundry_orders:   'laundry_orders.view',
+  laundry_services: 'laundry_services.view',
+  rooms:            'rooms.view',
+  tenants:          'tenants.view',
+  billing:          'billing.view',
+  reports:          'reports.view',
+  notifications:    'notifications.view',
+  settings:         'settings.view',
+}
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, ShoppingCart, Receipt, Package, Users, BarChart2,
@@ -43,18 +60,25 @@ function NavItem({ item, currentPath }: { item: NavigationItem; currentPath: str
 interface SidebarProps {
   open: boolean
   onClose: () => void
-  businessUsers: Array<{ businesses: { id: string; name: string; template_key: string } | null; role: string }>
+  businessUsers: Array<{ businesses: { id: string; name: string } | null; role: string }>
 }
 
 export function Sidebar({ open, onClose, businessUsers }: SidebarProps) {
   const pathname = usePathname()
-  const params = useParams()
-  const businessId = params?.businessId as string | undefined
-  const { activeBusiness, activeRole, templateConfig } = useBusinessStore()
+  const { activeBusiness, activeRole, templateConfig, modelLabels, hasPermission } = useBusinessStore()
 
-  const navigation: NavigationItem[] = templateConfig && activeBusiness && activeRole
+  const allNavigation: NavigationItem[] = templateConfig && activeBusiness && activeRole
     ? getNavigation(templateConfig, activeRole, activeBusiness.id)
     : []
+
+  // Filter nav items the user has no view permission for.
+  // Owner always passes (hasPermission returns true for everything).
+  const navigation = allNavigation.filter(item => {
+    if (!item.module) return true
+    const perm = MODULE_PERMISSION[item.module]
+    if (!perm) return true
+    return hasPermission(perm)
+  })
 
   const sidebarContent = (
     <div className="flex h-full flex-col">
@@ -76,7 +100,9 @@ export function Sidebar({ open, onClose, businessUsers }: SidebarProps) {
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 mb-2">Business</p>
             <div className="rounded-lg bg-slate-100 px-3 py-2">
               <p className="text-sm font-medium text-slate-800 truncate">{activeBusiness.name}</p>
-              <p className="text-xs text-slate-500 capitalize">{activeBusiness.template_key.replace('_', ' ')}</p>
+              <p className="text-xs text-slate-500 truncate">
+                {modelLabels.length > 0 ? modelLabels.join(', ') : 'Business'}
+              </p>
             </div>
           </div>
         ) : null}
@@ -98,8 +124,19 @@ export function Sidebar({ open, onClose, businessUsers }: SidebarProps) {
           </div>
         )}
 
-        {/* Finance — always visible when a business is active */}
-        {activeBusiness && (
+        {/* Team — visible when user has people.view */}
+        {activeBusiness && hasPermission('people.view') && (
+          <div className="mt-4 space-y-1">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 mb-2">Team</p>
+            <NavItem
+              item={{ key: 'people', label: 'People', href: `/${activeBusiness.id}/people`, icon: 'Users' }}
+              currentPath={pathname}
+            />
+          </div>
+        )}
+
+        {/* Finance — visible when user has financial_accounts.view */}
+        {activeBusiness && hasPermission('financial_accounts.view') && (
           <div className="mt-4 space-y-1">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider px-2 mb-2">Finance</p>
             <NavItem

@@ -133,7 +133,7 @@ export function SalesHistoryView({
 
   const totalPages = Math.ceil(totalCount / pageSize)
   const customerName = (row: SaleRow) =>
-    row.customer_name_snapshot ?? row.customers?.name ?? 'Walk-in'
+    row.customer_name_snapshot ?? row.customers?.name ?? 'Walk-in Customer'
 
   return (
     <div className="space-y-4">

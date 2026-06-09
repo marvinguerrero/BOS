@@ -11,7 +11,7 @@ export default async function NewSalePage({ params }: { params: Promise<{ busine
 
   const [{ data: products }, { data: customers }, { data: accounts }] = await Promise.all([
     supabase.from('products').select('*').eq('business_id', businessId).eq('is_active', true).gt('stock_quantity', 0).order('name'),
-    supabase.from('customers').select('id, name, outstanding_balance').eq('business_id', businessId).eq('is_active', true).order('name'),
+    supabase.from('customers').select('id, name, contact_number, outstanding_balance').eq('business_id', businessId).eq('is_active', true).order('name'),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('financial_accounts').select('*').eq('business_id', businessId).eq('is_active', true).order('sort_order'),
   ])

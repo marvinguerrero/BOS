@@ -15,7 +15,7 @@ async function fetchCount(businessId: string, type: string) {
 
   if (type === 'orders_today') {
     const { count } = await supabase
-      .from('laundry_orders')
+      .from('orders')
       .select('id', { count: 'exact', head: true })
       .eq('business_id', businessId)
       .gte('created_at', start)

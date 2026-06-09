@@ -31,6 +31,12 @@ export default async function SettingsPage({ params }: { params: Promise<{ busin
 
   const role = (membershipResult.data?.role ?? 'staff') as UserRole
 
+  const { data: canView } = await supabase.rpc('has_permission', {
+    p_business_id: businessId,
+    p_permission_key: 'settings.view',
+  })
+  if (!canView) redirect(`/${businessId}/dashboard`)
+
   return (
     <SettingsView
       business={businessResult.data}

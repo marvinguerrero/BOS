@@ -33,6 +33,12 @@ export default async function AccountsPage({
 
   if (!membershipResult.data) redirect('/dashboard')
 
+  const { data: canView } = await supabase.rpc('has_permission', {
+    p_business_id: businessId,
+    p_permission_key: 'financial_accounts.view',
+  })
+  if (!canView) redirect(`/${businessId}/dashboard`)
+
   return (
     <AccountsOverview
       businessId={businessId}

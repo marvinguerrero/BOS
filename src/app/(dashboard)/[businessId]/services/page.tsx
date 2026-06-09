@@ -4,7 +4,7 @@ import { LaundryServicesView } from '@/components/modules/laundry/services-view'
 
 export const metadata: Metadata = { title: 'Services' }
 
-export default async function LaundryServicesPage({ params }: { params: Promise<{ businessId: string }> }) {
+export default async function ServicesPage({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params
   const supabase = await createClient()
   const { data: services } = await supabase

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, ShoppingCart, Trash2, Plus, Minus, CheckCircle, Banknote, Wallet, Building2, CreditCard } from 'lucide-react'
+import { Search, ShoppingCart, Trash2, Plus, Minus, CheckCircle, Banknote, Wallet, Building2, CreditCard, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { useCartStore } from '@/stores/cart.store'
 import { Button } from '@/components/ui/button'
@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils/currency'
-import type { Product, Customer, FinancialAccount } from '@/types'
+import type { Product, Customer, FinancialAccount, CustomerType } from '@/types'
 import { CheckoutDialog } from './checkout-dialog'
 
 // ─── Account type config ───────────────────────────────────────────────────────
@@ -35,6 +35,12 @@ const ACCOUNT_TYPE_LABEL: Record<string, string> = {
   receivable: 'Credit',
 }
 
+const CUSTOMER_TYPES: Array<{ value: CustomerType; label: string }> = [
+  { value: 'walk_in', label: 'Walk-in' },
+  { value: 'guest', label: 'Guest' },
+  { value: 'registered', label: 'Registered' },
+]
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -50,6 +56,9 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
   const router = useRouter()
   const [search, setSearch] = useState('')
   const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const [customerType, setCustomerType] = useState<CustomerType>('walk_in')
+  const [guestName, setGuestName] = useState('')
+  const [guestMobile, setGuestMobile] = useState('')
 
   const {
     items, addItem, removeItem, updateQuantity,
@@ -67,34 +76,96 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
   }, [financialAccounts, paymentAccountId, setPaymentAccount])
 
   const selectedAccount = financialAccounts.find(a => a.id === paymentAccountId) ?? financialAccounts[0] ?? null
+  const selectedCustomer = customerId ? customers.find(c => c.id === customerId) ?? null : null
+  const requiresRegisteredCustomer =
+    paymentMethod === 'credit' ||
+    selectedAccount?.account_type === 'receivable' ||
+    selectedAccount?.legacy_method === 'credit'
 
   const filtered = products.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.sku?.toLowerCase().includes(search.toLowerCase())
   )
 
+  const handleCustomerTypeChange = (type: CustomerType) => {
+    setCustomerType(type)
+    if (type !== 'registered') setCustomerId(null)
+  }
+
+  const getCustomerSnapshot = () => {
+    if (customerType === 'registered') {
+      return {
+        customerId: selectedCustomer?.id ?? null,
+        name: selectedCustomer?.name ?? null,
+        mobile: selectedCustomer?.contact_number ?? null,
+      }
+    }
+
+    if (customerType === 'guest') {
+      return {
+        customerId: null,
+        name: guestName.trim(),
+        mobile: guestMobile.trim() || null,
+      }
+    }
+
+    return {
+      customerId: null,
+      name: 'Walk-in Customer',
+      mobile: null,
+    }
+  }
+
+  const validateCustomerSelection = () => {
+    if (requiresRegisteredCustomer && customerType !== 'registered') {
+      toast.error('Please select or create a customer before recording a credit sale.')
+      return false
+    }
+
+    if (customerType === 'registered' && !selectedCustomer) {
+      toast.error(
+        requiresRegisteredCustomer
+          ? 'Please select or create a customer before recording a credit sale.'
+          : 'Select a registered customer or switch to walk-in/guest.'
+      )
+      return false
+    }
+
+    if (customerType === 'guest' && guestName.trim().length === 0) {
+      toast.error('Enter a guest name before checkout.')
+      return false
+    }
+
+    return true
+  }
+
   const handleCheckout = async (amountTendered: number) => {
+    if (!validateCustomerSelection()) return
+
     const supabase = createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     const saleTotal = total()
     const change = Math.max(0, amountTendered - saleTotal)
-    const isCredit = paymentMethod === 'credit'
-    const selectedCustomer = customers.find(c => c.id === customerId) ?? null
+    const isCredit = requiresRegisteredCustomer
+    const salePaymentMethod = isCredit ? 'credit' : paymentMethod
+    const snapshot = getCustomerSnapshot()
 
     const { data: sale, error } = await supabase.from('sales').insert({
       business_id: businessId,
-      customer_id: customerId || null,
+      customer_id: snapshot.customerId,
       cashier_id: user.id,
       subtotal: subtotal(),
       discount,
       total: saleTotal,
-      payment_method: paymentMethod,
+      payment_method: salePaymentMethod,
       payment_account_id: selectedAccount?.id ?? null,
       amount_tendered: amountTendered,
       change_amount: change,
-      customer_name_snapshot: selectedCustomer?.name ?? null,
+      customer_type: customerType,
+      customer_name_snapshot: snapshot.name,
+      customer_mobile_snapshot: snapshot.mobile,
       payment_status: isCredit ? 'outstanding' : 'completed',
       amount_paid: isCredit ? 0 : saleTotal,
       balance_amount: isCredit ? saleTotal : 0,
@@ -124,10 +195,10 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
       ),
     ])
 
-    if (isCredit && customerId && selectedCustomer) {
+    if (isCredit && snapshot.customerId && selectedCustomer) {
       await supabase.from('customer_ledger').insert({
         business_id: businessId,
-        customer_id: customerId,
+        customer_id: snapshot.customerId,
         sale_id: sale.id,
         type: 'debit',
         amount: saleTotal,
@@ -135,11 +206,14 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
       })
       await supabase.from('customers')
         .update({ outstanding_balance: selectedCustomer.outstanding_balance + saleTotal })
-        .eq('id', customerId)
+        .eq('id', snapshot.customerId)
     }
 
     toast.success(`Sale complete! ${isCredit ? 'Credit recorded.' : `Change: ${formatCurrency(change)}`}`)
     clearCart()
+    setCustomerType('walk_in')
+    setGuestName('')
+    setGuestMobile('')
     setCheckoutOpen(false)
     router.refresh()
   }
@@ -196,19 +270,69 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
           </CardHeader>
           <CardContent className="space-y-3">
             {/* Customer */}
-            <Select value={customerId ?? ''} onValueChange={(v: string | null) => setCustomerId(v || null)}>
-              <SelectTrigger className="text-sm">
-                <SelectValue placeholder="Walk-in customer" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">Walk-in</SelectItem>
-                {customers.map(c => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} {c.outstanding_balance > 0 && `(₱${c.outstanding_balance} utang)`}
-                  </SelectItem>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Customer Type
+              </p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {CUSTOMER_TYPES.map(type => (
+                  <Button
+                    key={type.value}
+                    type="button"
+                    variant={customerType === type.value ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-9 px-2 text-xs"
+                    onClick={() => handleCustomerTypeChange(type.value)}
+                  >
+                    {type.label}
+                  </Button>
                 ))}
-              </SelectContent>
-            </Select>
+              </div>
+
+              {customerType === 'guest' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Input
+                    value={guestName}
+                    onChange={e => setGuestName(e.target.value)}
+                    placeholder="Guest name"
+                    className="h-9 text-sm"
+                  />
+                  <Input
+                    value={guestMobile}
+                    onChange={e => setGuestMobile(e.target.value)}
+                    placeholder="Mobile number"
+                    className="h-9 text-sm"
+                  />
+                </div>
+              )}
+
+              {customerType === 'registered' && (
+                <div className="flex gap-2">
+                  <Select value={customerId ?? ''} onValueChange={(v: string | null) => setCustomerId(v || null)}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue placeholder="Select customer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} {c.outstanding_balance > 0 && `(${formatCurrency(c.outstanding_balance)} utang)`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => router.push(`/${businessId}/customers`)}
+                    aria-label="Create customer"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
 
             <Separator />
 
@@ -315,7 +439,9 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
               className="w-full gap-2"
               size="lg"
               disabled={items.length === 0}
-              onClick={() => setCheckoutOpen(true)}
+              onClick={() => {
+                if (validateCustomerSelection()) setCheckoutOpen(true)
+              }}
             >
               <CheckCircle className="h-5 w-5" />
               Checkout
@@ -328,7 +454,7 @@ export function POSView({ businessId, products, customers, financialAccounts }: 
         open={checkoutOpen}
         onOpenChange={setCheckoutOpen}
         total={total()}
-        paymentMethod={paymentMethod}
+        paymentMethod={requiresRegisteredCustomer ? 'credit' : paymentMethod}
         accountName={selectedAccount?.name ?? null}
         onConfirm={handleCheckout}
       />

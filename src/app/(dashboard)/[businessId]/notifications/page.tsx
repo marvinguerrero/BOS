@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { NotificationsView } from '@/components/shared/notifications-view'
+import type { BusinessInvitation } from '@/types'
 
 export const metadata: Metadata = { title: 'Notifications' }
 
@@ -17,5 +18,23 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
     .order('created_at', { ascending: false })
     .limit(50)
 
-  return <NotificationsView businessId={businessId} initialNotifications={notifications ?? []} />
+  const { data: invitations } = user?.email
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ? await (supabase as any)
+      .from('business_invitations')
+      .select('*, business:businesses(id, name), position:positions(*)')
+      .eq('business_id', businessId)
+      .eq('status', 'pending')
+      .gt('expires_at', new Date().toISOString())
+      .ilike('email', user.email)
+      .order('created_at', { ascending: false })
+    : { data: [] }
+
+  return (
+    <NotificationsView
+      businessId={businessId}
+      initialNotifications={notifications ?? []}
+      initialInvitations={(invitations ?? []) as BusinessInvitation[]}
+    />
+  )
 }

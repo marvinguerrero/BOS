@@ -1,24 +1,21 @@
 'use client'
 
 import { useState } from 'react'
-import { useQueryClient, useMutation } from '@tanstack/react-query'
-import { Plus, Edit, Layers } from 'lucide-react'
-import { toast } from 'sonner'
+import { Plus, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils/currency'
-import type { LaundryService } from '@/types'
+import type { Service } from '@/types'
 import { ServiceDialog } from './service-dialog'
 
-interface Props { businessId: string; initialServices: LaundryService[] }
+interface Props { businessId: string; initialServices: Service[] }
 
 export function LaundryServicesView({ businessId, initialServices }: Props) {
-  const qc = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editService, setEditService] = useState<LaundryService | null>(null)
+  const [editService, setEditService] = useState<Service | null>(null)
   const [services, setServices] = useState(initialServices)
 
   return (
@@ -40,7 +37,7 @@ export function LaundryServicesView({ businessId, initialServices }: Props) {
             <TableHeader>
               <TableRow>
                 <TableHead>Service Name</TableHead>
-                <TableHead>Pricing Type</TableHead>
+                <TableHead>Description</TableHead>
                 <TableHead className="text-right">Rate</TableHead>
                 <TableHead className="w-16"></TableHead>
               </TableRow>
@@ -56,13 +53,9 @@ export function LaundryServicesView({ businessId, initialServices }: Props) {
                 services.map(s => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {s.pricing_type === 'per_kg' ? 'Per Kilogram' : 'Fixed Rate'}
-                      </Badge>
-                    </TableCell>
+                    <TableCell>{s.description ?? <Badge variant="outline">No description</Badge>}</TableCell>
                     <TableCell className="text-right font-medium">
-                      {formatCurrency(s.price)}{s.pricing_type === 'per_kg' ? '/kg' : ''}
+                      {formatCurrency(s.price)}
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditService(s); setDialogOpen(true) }}>
@@ -84,7 +77,12 @@ export function LaundryServicesView({ businessId, initialServices }: Props) {
         service={editService}
         onSuccess={async () => {
           const supabase = createClient()
-          const { data } = await supabase.from('laundry_services').select('*').eq('business_id', businessId).eq('is_active', true).order('name')
+          const { data } = await supabase
+            .from('services')
+            .select('*')
+            .eq('business_id', businessId)
+            .eq('is_active', true)
+            .order('name')
           setServices(data ?? [])
           setDialogOpen(false)
         }}

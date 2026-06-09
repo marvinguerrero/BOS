@@ -10,15 +10,19 @@ import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { createClient } from '@/lib/supabase/client'
-import type { LaundryService } from '@/types'
+import type { Service } from '@/types'
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
-  pricing_type: z.enum(['fixed', 'per_kg']),
+  description: z.string().optional(),
   price: z.coerce.number().min(0),
+  duration_minutes: z.preprocess(
+    value => value === '' || value === null ? undefined : value,
+    z.coerce.number().int().positive().optional()
+  ),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -26,28 +30,41 @@ interface Props {
   open: boolean
   onOpenChange: (v: boolean) => void
   businessId: string
-  service: LaundryService | null
+  service: Service | null
   onSuccess: () => void
 }
 
 export function ServiceDialog({ open, onOpenChange, businessId, service, onSuccess }: Props) {
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<FormValues>({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({
     resolver: zodResolver(schema) as import("react-hook-form").Resolver<FormValues>,
-    defaultValues: { pricing_type: 'fixed', price: 0 },
+    defaultValues: { price: 0 },
   })
 
   useEffect(() => {
-    reset(service ? { name: service.name, pricing_type: service.pricing_type, price: service.price } : { name: '', pricing_type: 'fixed', price: 0 })
+    reset(service
+      ? {
+          name: service.name,
+          description: service.description ?? '',
+          price: service.price,
+          duration_minutes: service.duration_minutes ?? undefined,
+        }
+      : { name: '', description: '', price: 0, duration_minutes: undefined }
+    )
   }, [service, open, reset])
 
   const mutation = useMutation({
     mutationFn: async (values: FormValues) => {
       const supabase = createClient()
+      const payload = {
+        ...values,
+        description: values.description || null,
+        duration_minutes: values.duration_minutes || null,
+      }
       if (service) {
-        const { error } = await supabase.from('laundry_services').update(values).eq('id', service.id)
+        const { error } = await supabase.from('services').update(payload).eq('id', service.id)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('laundry_services').insert({ ...values, business_id: businessId })
+        const { error } = await supabase.from('services').insert({ ...payload, business_id: businessId })
         if (error) throw error
       }
     },
@@ -66,18 +83,16 @@ export function ServiceDialog({ open, onOpenChange, businessId, service, onSucce
             {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
           </div>
           <div className="space-y-2">
-            <Label>Pricing Type</Label>
-            <Select value={watch('pricing_type')} onValueChange={(v: string | null) => setValue("pricing_type", (v ?? "fixed") as "fixed" | "per_kg")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="fixed">Fixed Rate</SelectItem>
-                <SelectItem value="per_kg">Per Kilogram</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label>Description</Label>
+            <Textarea rows={2} placeholder="What this service includes..." {...register('description')} />
           </div>
           <div className="space-y-2">
-            <Label>Price (₱) {watch('pricing_type') === 'per_kg' ? '/ kg' : ''}</Label>
+            <Label>Price (₱)</Label>
             <Input type="number" step="0.01" min="0" {...register('price')} />
+          </div>
+          <div className="space-y-2">
+            <Label>Duration (minutes)</Label>
+            <Input type="number" step="1" min="1" placeholder="Optional" {...register('duration_minutes')} />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

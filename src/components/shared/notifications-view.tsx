@@ -10,10 +10,16 @@ import { useNotificationStore } from '@/stores/notification.store'
 import type { Notification } from '@/types'
 import { cn } from '@/lib/utils'
 import { useEffect } from 'react'
+import { PendingInvitationsPanel } from '@/components/people/pending-invitations-panel'
+import type { BusinessInvitation } from '@/types'
 
-interface Props { businessId: string; initialNotifications: Notification[] }
+interface Props {
+  businessId: string
+  initialNotifications: Notification[]
+  initialInvitations: BusinessInvitation[]
+}
 
-export function NotificationsView({ businessId, initialNotifications }: Props) {
+export function NotificationsView({ businessId, initialNotifications, initialInvitations }: Props) {
   const [notifications, setNotifications] = useState(initialNotifications)
   const { setNotifications: setStore, markAllRead } = useNotificationStore()
 
@@ -55,6 +61,8 @@ export function NotificationsView({ businessId, initialNotifications }: Props) {
           </Button>
         )}
       </div>
+
+      <PendingInvitationsPanel initialInvitations={initialInvitations} />
 
       {notifications.length === 0 ? (
         <Card>

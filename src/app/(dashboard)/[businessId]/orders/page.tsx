@@ -4,7 +4,7 @@ import { LaundryOrdersView } from '@/components/modules/laundry/orders-view'
 
 export const metadata: Metadata = { title: 'Orders' }
 
-export default async function LaundryOrdersPage({ params }: { params: Promise<{ businessId: string }> }) {
+export default async function OrdersPage({ params }: { params: Promise<{ businessId: string }> }) {
   const { businessId } = await params
   const supabase = await createClient()
   const [{ data: orders }, { data: statuses }] = await Promise.all([

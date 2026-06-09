@@ -5,14 +5,13 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Loader2, Store, WashingMachine, Home, CheckCircle, Banknote, Wallet, Building2, CreditCard, Plus, Archive, ArchiveRestore, ExternalLink } from 'lucide-react'
+import { Loader2, Store, WashingMachine, Home, CheckCircle, Banknote, Wallet, Building2, CreditCard, Plus, Archive, ArchiveRestore, ExternalLink, Users } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -231,6 +230,30 @@ export function SettingsView({ business, profile, userId, role, currentModelKeys
   return (
     <div className="max-w-2xl space-y-6">
       <h1 className="text-2xl font-bold">Settings</h1>
+
+      {/* ── People Management ──────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                People
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Manage relationships, roles, custom positions, and service assignments.
+              </CardDescription>
+            </div>
+            <a
+              href={`/${business.id}/people`}
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap mt-0.5"
+            >
+              Open Team
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        </CardHeader>
+      </Card>
 
       {/* ── Business Information ────────────────────────────────────────── */}
       <Card>

@@ -20,13 +20,16 @@ const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   tenant: Users,
 }
 
-async function search(businessId: string, query: string, templateKey: string): Promise<SearchResult[]> {
+async function search(businessId: string, query: string, modelKeys: string[]): Promise<SearchResult[]> {
   if (!query.trim() || query.length < 2) return []
   const supabase = createClient()
   const results: SearchResult[] = []
+  const hasRetail = modelKeys.includes('retail')
+  const hasService = modelKeys.includes('service')
+  const hasRental = modelKeys.includes('rental')
 
-  // Search products (sari-sari)
-  if (templateKey === 'sari_sari') {
+  // Search products
+  if (hasRetail) {
     const { data: products } = await supabase
       .from('products')
       .select('id, name, sku')
@@ -37,7 +40,7 @@ async function search(businessId: string, query: string, templateKey: string): P
     products?.forEach((p: { id: string; name: string; sku?: string }) => results.push({ type: 'product', id: p.id, title: p.name, subtitle: p.sku ? `SKU: ${p.sku}` : undefined, href: `/${businessId}/inventory/products` }))
   }
 
-  // Search customers (all templates)
+  // Search customers across all business models
   const { data: customers } = await supabase
     .from('customers')
     .select('id, name, contact_number')
@@ -47,19 +50,25 @@ async function search(businessId: string, query: string, templateKey: string): P
     .limit(5)
   customers?.forEach((c: { id: string; name: string; contact_number?: string | null }) => results.push({ type: 'customer', id: c.id, title: c.name, subtitle: c.contact_number ?? undefined, href: `/${businessId}/customers` }))
 
-  // Search laundry orders
-  if (templateKey === 'laundry') {
+  // Search service orders
+  if (hasService) {
     const { data: orders } = await supabase
-      .from('laundry_orders')
-      .select('id, customer_name, status')
+      .from('orders')
+      .select('id, customer_name, customer_name_snapshot, order_statuses(name)')
       .eq('business_id', businessId)
-      .ilike('customer_name', `%${query}%`)
+      .or(`customer_name.ilike.%${query}%,customer_name_snapshot.ilike.%${query}%`)
       .limit(5)
-    orders?.forEach((o: { id: string; customer_name: string; status: string }) => results.push({ type: 'order', id: o.id, title: o.customer_name, subtitle: `Status: ${o.status}`, href: `/${businessId}/laundry/orders` }))
+    orders?.forEach((o: { id: string; customer_name: string | null; customer_name_snapshot?: string | null; order_statuses?: { name: string } | null }) => results.push({
+      type: 'order',
+      id: o.id,
+      title: o.customer_name_snapshot ?? o.customer_name ?? 'Walk-in Customer',
+      subtitle: o.order_statuses?.name ? `Status: ${o.order_statuses.name}` : undefined,
+      href: `/${businessId}/orders`,
+    }))
   }
 
   // Search rooms & tenants
-  if (templateKey === 'room_rental') {
+  if (hasRental) {
     const { data: rooms } = await supabase
       .from('rooms')
       .select('id, room_number, status')
@@ -85,17 +94,14 @@ async function search(businessId: string, query: string, templateKey: string): P
 export function GlobalSearch({ businessId }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
-  const [loading, setLoading] = useState(false)
   const debouncedQuery = useDebounce(query, 300)
-  const templateKey = useBusinessStore(s => s.activeBusiness?.template_key ?? 'sari_sari')
+  const modelKeys = useBusinessStore(s => s.modelKeys)
 
   useEffect(() => {
-    if (!debouncedQuery) { setResults([]); return }
-    setLoading(true)
-    search(businessId, debouncedQuery, templateKey)
+    if (!debouncedQuery) return
+    search(businessId, debouncedQuery, modelKeys)
       .then(setResults)
-      .finally(() => setLoading(false))
-  }, [debouncedQuery, businessId, templateKey])
+  }, [debouncedQuery, businessId, modelKeys])
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -111,17 +117,11 @@ export function GlobalSearch({ businessId }: Props) {
         />
       </div>
 
-      {loading && (
-        <div className="space-y-2">
-          {[1, 2, 3].map(i => <div key={i} className="h-14 rounded-lg bg-slate-100 animate-pulse" />)}
-        </div>
-      )}
-
-      {!loading && results.length === 0 && debouncedQuery.length >= 2 && (
+      {results.length === 0 && debouncedQuery.length >= 2 && (
         <p className="text-center text-muted-foreground py-8">No results for &quot;{debouncedQuery}&quot;</p>
       )}
 
-      {!loading && results.length > 0 && (
+      {debouncedQuery && results.length > 0 && (
         <div className="space-y-2">
           {results.map(result => {
             const Icon = TYPE_ICONS[result.type] ?? Search

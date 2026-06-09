@@ -154,7 +154,7 @@ export function SaleDetailView({ sale, cashierName, voiderName, businessId, user
   const itemSku = (item: SaleItemRow) =>
     item.product_sku_snapshot ?? item.products?.sku ?? null
   const customerName =
-    sale.customer_name_snapshot ?? sale.customers?.name ?? 'Walk-in'
+    sale.customer_name_snapshot ?? sale.customers?.name ?? 'Walk-in Customer'
 
   return (
     <div className="max-w-2xl space-y-4">

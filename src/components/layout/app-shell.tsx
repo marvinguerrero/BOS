@@ -6,12 +6,11 @@ import type { UserProfile } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { Sidebar } from './sidebar'
 import { Header } from './header'
-import { cn } from '@/lib/utils'
 
 interface AppShellProps {
   user: User
   profile: UserProfile | null
-  businessUsers: Array<{ businesses: { id: string; name: string; template_key: string } | null; role: string }>
+  businessUsers: Array<{ businesses: { id: string; name: string } | null; role: string }>
   children: React.ReactNode
 }
 
