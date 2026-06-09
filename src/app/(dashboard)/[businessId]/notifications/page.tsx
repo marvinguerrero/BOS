@@ -23,7 +23,6 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
     ? await (supabase as any)
       .from('business_invitations')
       .select('*, business:businesses(id, name), position:positions(*)')
-      .eq('business_id', businessId)
       .eq('status', 'pending')
       .gt('expires_at', new Date().toISOString())
       .ilike('email', user.email)

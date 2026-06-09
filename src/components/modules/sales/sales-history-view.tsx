@@ -28,6 +28,7 @@ interface SaleRow {
   status: SaleStatus
   payment_status: SalePaymentStatus
   balance_amount: number
+  cashier_name: string | null
 }
 
 interface Props {
@@ -207,6 +208,7 @@ export function SalesHistoryView({
                   <TableHead className="w-32">Receipt</TableHead>
                   <TableHead>Date & Time</TableHead>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Served by</TableHead>
                   <TableHead className="text-center">Items</TableHead>
                   <TableHead>Payment</TableHead>
                   <TableHead>Status</TableHead>
@@ -217,7 +219,7 @@ export function SalesHistoryView({
               <TableBody>
                 {sales.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                    <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
                       No sales found
                     </TableCell>
                   </TableRow>
@@ -235,6 +237,9 @@ export function SalesHistoryView({
                         {formatDateTime(sale.created_at)}
                       </TableCell>
                       <TableCell className="font-medium">{customerName(sale)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {sale.cashier_name ?? '—'}
+                      </TableCell>
                       <TableCell className="text-center text-sm text-muted-foreground">
                         {sale.sale_items?.length ?? 0}
                       </TableCell>

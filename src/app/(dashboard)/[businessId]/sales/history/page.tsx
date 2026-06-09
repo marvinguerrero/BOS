@@ -46,7 +46,7 @@ export default async function SalesHistoryPage({
 
   let query = supabase
     .from('sales')
-    .select('id, receipt_number, created_at, customer_id, customer_name_snapshot, customers(name), sale_items(id), total, payment_method, status, payment_status, balance_amount', { count: 'exact' })
+    .select('id, receipt_number, created_at, customer_id, customer_name_snapshot, customers(name), sale_items(id), total, payment_method, status, payment_status, balance_amount, cashier_id', { count: 'exact' })
     .eq('business_id', businessId)
     .order('created_at', { ascending: false })
     .range(from, to)
@@ -78,17 +78,26 @@ export default async function SalesHistoryPage({
     revenueQuery = revenueQuery.gte('created_at', dateWindow.from).lte('created_at', dateWindow.to)
   }
 
-  const [{ data: sales, count }, { data: revenueRows }] = await Promise.all([
+  const [{ data: sales, count }, { data: revenueRows }, { data: people }] = await Promise.all([
     query,
     revenueQuery,
+    supabase.from('business_people').select('user_id, name').eq('business_id', businessId).eq('is_active', true),
   ])
 
   const totalRevenue = (revenueRows ?? []).reduce((s: number, r: { total: number }) => s + r.total, 0)
 
+  const peopleByUserId = new Map((people ?? []).map(p => [p.user_id, p.name]))
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const salesWithCashier = (sales ?? []).map((sale: any) => ({
+    ...sale,
+    cashier_name: sale.cashier_id ? (peopleByUserId.get(sale.cashier_id) ?? null) : null,
+  }))
+
   return (
     <SalesHistoryView
       businessId={businessId}
-      sales={sales ?? []}
+      sales={salesWithCashier}
       totalCount={count ?? 0}
       totalRevenue={totalRevenue}
       page={page}
