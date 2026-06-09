@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { toast } from 'sonner'
-import { Loader2, Store, WashingMachine, Home, CheckCircle, Banknote, Wallet, Building2, CreditCard, Plus, Archive, ArchiveRestore, ExternalLink, Users } from 'lucide-react'
+import { Loader2, Store, WashingMachine, Home, CheckCircle, Banknote, Wallet, Building2, CreditCard, Plus, Archive, ArchiveRestore, ExternalLink, Users, GitBranch, Percent } from 'lucide-react'
 import { useMutation } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,9 +13,10 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
-import type { UserProfile, UserRole, FinancialAccount, FinancialAccountType } from '@/types'
+import type { UserProfile, UserRole, FinancialAccount, FinancialAccountType, RevenueSharingSettings, TipDistributionType, PaymentCorrectionSettings } from '@/types'
 
 // ─── Business model catalogue ─────────────────────────────────────────────────
 // Defined locally — these 3 are stable and don't need a DB fetch in settings.
@@ -62,6 +63,27 @@ const profileSchema = z.object({
 type BizValues = z.infer<typeof bizSchema>
 type ProfileValues = z.infer<typeof profileSchema>
 
+const revenueSchema = z.object({
+  owner_share_percent: z.coerce.number().min(0).max(100),
+  worker_share_percent: z.coerce.number().min(0).max(100),
+  tip_distribution: z.enum(['worker', 'business', 'shared']),
+  owner_tip_share_percent: z.coerce.number().min(0).max(100),
+  worker_tip_share_percent: z.coerce.number().min(0).max(100),
+}).superRefine((values, ctx) => {
+  if (values.owner_share_percent + values.worker_share_percent !== 100) {
+    ctx.addIssue({ code: 'custom', path: ['worker_share_percent'], message: 'Owner and worker shares must total 100%.' })
+  }
+  if (values.tip_distribution === 'shared' && values.owner_tip_share_percent + values.worker_tip_share_percent !== 100) {
+    ctx.addIssue({ code: 'custom', path: ['worker_tip_share_percent'], message: 'Shared tip percentages must total 100%.' })
+  }
+})
+type RevenueValues = z.infer<typeof revenueSchema>
+
+const correctionSchema = z.object({
+  operator_time_limit_mins: z.coerce.number().int().min(0).max(1440),
+})
+type CorrectionValues = z.infer<typeof correctionSchema>
+
 // ─── Financial account config ─────────────────────────────────────────────────
 
 const ACCOUNT_TYPE_OPTIONS: { value: FinancialAccountType; label: string; icon: React.ElementType; legacyMethod: string }[] = [
@@ -89,11 +111,13 @@ interface Props {
   role: UserRole
   currentModelKeys: string[]
   financialAccounts: FinancialAccount[]
+  revenueSharingSettings: RevenueSharingSettings | null
+  paymentCorrectionSettings: PaymentCorrectionSettings | null
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function SettingsView({ business, profile, userId, role, currentModelKeys, financialAccounts: initialAccounts }: Props) {
+export function SettingsView({ business, profile, userId, role, currentModelKeys, financialAccounts: initialAccounts, revenueSharingSettings, paymentCorrectionSettings }: Props) {
   const isOwner = role === 'owner'
 
   // ── Business info form ─────────────────────────────────────────────────────
@@ -139,6 +163,73 @@ export function SettingsView({ business, profile, userId, role, currentModelKeys
       if (error) throw error
     },
     onSuccess: () => toast.success('Profile updated'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  // ── Revenue sharing form ────────────────────────────────────────────────────
+  const revenueForm = useForm<RevenueValues>({
+    resolver: zodResolver(revenueSchema) as import("react-hook-form").Resolver<RevenueValues>,
+    defaultValues: {
+      owner_share_percent: revenueSharingSettings?.owner_share_percent ?? 50,
+      worker_share_percent: revenueSharingSettings?.worker_share_percent ?? 50,
+      tip_distribution: revenueSharingSettings?.tip_distribution ?? 'worker',
+      owner_tip_share_percent: revenueSharingSettings?.owner_tip_share_percent ?? 0,
+      worker_tip_share_percent: revenueSharingSettings?.worker_tip_share_percent ?? 100,
+    },
+  })
+
+  const tipDistribution = revenueForm.watch('tip_distribution')
+
+  const revenueMutation = useMutation({
+    mutationFn: async (values: RevenueValues) => {
+      const tipValues = values.tip_distribution === 'worker'
+        ? { owner_tip_share_percent: 0, worker_tip_share_percent: 100 }
+        : values.tip_distribution === 'business'
+          ? { owner_tip_share_percent: 100, worker_tip_share_percent: 0 }
+          : {
+              owner_tip_share_percent: values.owner_tip_share_percent,
+              worker_tip_share_percent: values.worker_tip_share_percent,
+            }
+      const supabase = createClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('revenue_sharing_settings')
+        .upsert({
+          business_id: business.id,
+          owner_share_percent: values.owner_share_percent,
+          worker_share_percent: values.worker_share_percent,
+          tip_distribution: values.tip_distribution,
+          ...tipValues,
+        }, { onConflict: 'business_id' })
+      if (error) throw error
+      revenueForm.reset({ ...values, ...tipValues })
+    },
+    onSuccess: () => toast.success('Revenue sharing updated'),
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  // ── Payment correction settings ────────────────────────────────────────────
+  const correctionForm = useForm<CorrectionValues>({
+    resolver: zodResolver(correctionSchema) as import("react-hook-form").Resolver<CorrectionValues>,
+    defaultValues: {
+      operator_time_limit_mins: paymentCorrectionSettings?.operator_time_limit_mins ?? 15,
+    },
+  })
+
+  const correctionMutation = useMutation({
+    mutationFn: async (values: CorrectionValues) => {
+      const supabase = createClient()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase as any)
+        .from('payment_correction_settings')
+        .upsert({
+          business_id: business.id,
+          operator_time_limit_mins: values.operator_time_limit_mins,
+        }, { onConflict: 'business_id' })
+      if (error) throw error
+      correctionForm.reset(values)
+    },
+    onSuccess: () => toast.success('Payment correction settings updated'),
     onError: (e: Error) => toast.error(e.message),
   })
 
@@ -254,6 +345,137 @@ export function SettingsView({ business, profile, userId, role, currentModelKeys
           </div>
         </CardHeader>
       </Card>
+
+      {/* ── Workflow Management (owner/manager only) ───────────────────── */}
+      {isOwner && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4" />
+                  Workflow Management
+                </CardTitle>
+                <CardDescription className="mt-1">
+                  Configure the stages and allowed transitions for service orders.
+                </CardDescription>
+              </div>
+              <a
+                href={`/${business.id}/settings/workflow`}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap mt-0.5"
+              >
+                Manage Workflow
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+          </CardHeader>
+        </Card>
+      )}
+
+      {isOwner && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Percent className="h-4 w-4" />
+              Revenue Sharing
+            </CardTitle>
+            <CardDescription>
+              Define the default split between the business and the worker. Revenue remains gross; commissions are tracked separately.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={revenueForm.handleSubmit(values => revenueMutation.mutate(values))} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Owner Share %</Label>
+                  <Input type="number" step="0.01" min="0" max="100" {...revenueForm.register('owner_share_percent')} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Worker Share %</Label>
+                  <Input type="number" step="0.01" min="0" max="100" {...revenueForm.register('worker_share_percent')} />
+                  {revenueForm.formState.errors.worker_share_percent && (
+                    <p className="text-xs text-destructive">{revenueForm.formState.errors.worker_share_percent.message}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Tip Distribution</Label>
+                <Select
+                  value={tipDistribution}
+                  onValueChange={(value: string | null) => revenueForm.setValue('tip_distribution', (value ?? 'worker') as TipDistributionType)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="worker">100% Worker</SelectItem>
+                    <SelectItem value="business">100% Business</SelectItem>
+                    <SelectItem value="shared">Shared</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {tipDistribution === 'shared' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Owner Tip Share %</Label>
+                    <Input type="number" step="0.01" min="0" max="100" {...revenueForm.register('owner_tip_share_percent')} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Worker Tip Share %</Label>
+                    <Input type="number" step="0.01" min="0" max="100" {...revenueForm.register('worker_tip_share_percent')} />
+                    {revenueForm.formState.errors.worker_tip_share_percent && (
+                      <p className="text-xs text-destructive">{revenueForm.formState.errors.worker_tip_share_percent.message}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                <Button type="submit" disabled={revenueMutation.isPending}>
+                  {revenueMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Revenue Sharing
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {isOwner && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Payment Corrections</CardTitle>
+            <CardDescription>
+              Limit how long operators can void-and-replace payments they collected. Owners and managers can correct any payment.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={correctionForm.handleSubmit(values => correctionMutation.mutate(values))} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Operator Correction Window (minutes)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="1440"
+                  step="1"
+                  {...correctionForm.register('operator_time_limit_mins')}
+                />
+                {correctionForm.formState.errors.operator_time_limit_mins && (
+                  <p className="text-xs text-destructive">{correctionForm.formState.errors.operator_time_limit_mins.message}</p>
+                )}
+              </div>
+              <div className="flex justify-end pt-2">
+                <Button type="submit" disabled={correctionMutation.isPending}>
+                  {correctionMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save Payment Corrections
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Business Information ────────────────────────────────────────── */}
       <Card>

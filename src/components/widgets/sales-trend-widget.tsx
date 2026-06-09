@@ -5,33 +5,63 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils/currency'
-import { subDays, format, parseISO, startOfDay } from 'date-fns'
-import type { DashboardWidgetConfig } from '@/types'
+import { subDays, format, parseISO } from 'date-fns'
+import type { DashboardWidgetConfig, RevenueScope } from '@/types'
 
-interface Props { businessId: string; widget: DashboardWidgetConfig }
+interface Props { businessId: string; widget: DashboardWidgetConfig; revenueScope: RevenueScope }
 
-async function fetchTrend(businessId: string, type: string) {
+async function fetchTrend(businessId: string, type: string, revenueScope: RevenueScope) {
+  if (revenueScope.mode === 'hidden') return []
+
   const supabase = createClient()
   const days = 7
   const start = subDays(new Date(), days - 1)
   start.setHours(0, 0, 0, 0)
+  const isPersonal = revenueScope.mode === 'personal'
 
   let data: Array<{ created_at: string; total?: number; amount?: number }> = []
 
   if (type === 'collection_trend') {
-    const { data: payments } = await supabase
+    let query = supabase
       .from('rent_payments')
       .select('created_at, amount')
       .eq('business_id', businessId)
       .gte('created_at', start.toISOString())
+    if (isPersonal) query = query.eq('created_by', revenueScope.currentUserId)
+    const { data: payments } = await query
     data = payments ?? []
   } else {
-    const { data: sales } = await supabase
+    let salesQuery = supabase
       .from('sales')
       .select('created_at, total')
       .eq('business_id', businessId)
+      .eq('status', 'completed')
       .gte('created_at', start.toISOString())
-    data = sales ?? []
+    if (isPersonal) salesQuery = salesQuery.eq('cashier_id', revenueScope.currentUserId)
+
+    const ordersQuery = isPersonal && !revenueScope.currentPersonId
+      ? Promise.resolve({ data: [] })
+      : (() => {
+          let query = supabase
+            .from('orders')
+            .select('created_at, total_amount, order_statuses!inner(name)')
+            .eq('business_id', businessId)
+            .in('order_statuses.name', ['Completed', 'Paid', 'Closed', 'Claimed'])
+            .gte('created_at', start.toISOString())
+          if (isPersonal && revenueScope.currentPersonId) {
+            query = query.eq('assigned_to_person_id', revenueScope.currentPersonId)
+          }
+          return query
+        })()
+
+    const [{ data: sales }, { data: orders }] = await Promise.all([salesQuery, ordersQuery])
+    data = [
+      ...((sales ?? []) as { created_at: string; total: number }[]),
+      ...((orders ?? []) as { created_at: string; total_amount: number }[]).map(order => ({
+        created_at: order.created_at,
+        total: order.total_amount,
+      })),
+    ]
   }
 
   // Group by day
@@ -48,16 +78,17 @@ async function fetchTrend(businessId: string, type: string) {
   return Object.entries(grouped).map(([date, revenue]) => ({ date, revenue }))
 }
 
-export function SalesTrendWidget({ businessId, widget }: Props) {
+export function SalesTrendWidget({ businessId, widget, revenueScope }: Props) {
   const { data = [], isLoading } = useQuery({
-    queryKey: ['widget', widget.id, businessId],
-    queryFn: () => fetchTrend(businessId, widget.type),
+    queryKey: ['widget', widget.id, businessId, revenueScope.mode, revenueScope.currentUserId, revenueScope.currentPersonId],
+    queryFn: () => fetchTrend(businessId, widget.type, revenueScope),
   })
+  const title = revenueScope.mode === 'personal' ? 'My Revenue Trend' : widget.title
 
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{widget.title}</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
       </CardHeader>
       <CardContent>
         {isLoading ? (

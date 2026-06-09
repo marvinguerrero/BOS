@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { SettingsView } from '@/components/business/settings-view'
-import type { UserRole, FinancialAccount } from '@/types'
+import type { UserRole, FinancialAccount, RevenueSharingSettings, PaymentCorrectionSettings } from '@/types'
 
 export const metadata: Metadata = { title: 'Settings' }
 
@@ -12,7 +12,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ busin
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/auth/login')
 
-  const [businessResult, profileResult, membershipResult, modelsResult, accountsResult] = await Promise.all([
+  const [businessResult, profileResult, membershipResult, modelsResult, accountsResult, revenueSettingsResult, correctionSettingsResult] = await Promise.all([
     supabase.from('businesses').select('id, name, address, contact_number').eq('id', businessId).single(),
     supabase.from('user_profiles').select('*').eq('id', user.id).single(),
     supabase.from('business_users').select('role').eq('business_id', businessId).eq('user_id', user.id).eq('is_active', true).single(),
@@ -20,6 +20,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ busin
     (supabase as any).from('business_business_models').select('model_key').eq('business_id', businessId),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabase as any).from('financial_accounts').select('*').eq('business_id', businessId).order('sort_order'),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('revenue_sharing_settings').select('*').eq('business_id', businessId).maybeSingle(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase as any).from('payment_correction_settings').select('*').eq('business_id', businessId).maybeSingle(),
   ])
 
   if (!businessResult.data) redirect('/dashboard')
@@ -28,6 +32,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ busin
     .map(r => r.model_key)
 
   const financialAccounts: FinancialAccount[] = (accountsResult as { data: FinancialAccount[] | null }).data ?? []
+  const revenueSharingSettings =
+    (revenueSettingsResult as { data: RevenueSharingSettings | null }).data ?? null
+  const paymentCorrectionSettings =
+    (correctionSettingsResult as { data: PaymentCorrectionSettings | null }).data ?? null
 
   const role = (membershipResult.data?.role ?? 'staff') as UserRole
 
@@ -45,6 +53,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ busin
       role={role}
       currentModelKeys={currentModelKeys}
       financialAccounts={financialAccounts}
+      revenueSharingSettings={revenueSharingSettings}
+      paymentCorrectionSettings={paymentCorrectionSettings}
     />
   )
 }

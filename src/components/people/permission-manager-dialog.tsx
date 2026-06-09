@@ -62,7 +62,11 @@ const PERMISSION_GROUPS: Group[] = [
   },
   {
     label: 'Reports',
-    perms: [{ key: 'reports.view', label: 'View Reports' }],
+    perms: [
+      { key: 'reports.view', label: 'View Reports' },
+      { key: 'reports.view_personal_revenue', label: 'View Personal Revenue' },
+      { key: 'reports.view_business_revenue', label: 'View Business Revenue' },
+    ],
   },
   {
     label: 'Financial Accounts',

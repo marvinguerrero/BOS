@@ -13,6 +13,11 @@ import { ServiceDialog } from './service-dialog'
 
 interface Props { businessId: string; initialServices: Service[] }
 
+function getRevenueShare(service: Service) {
+  const share = service.revenue_share
+  return Array.isArray(share) ? share[0] ?? null : share ?? null
+}
+
 export function LaundryServicesView({ businessId, initialServices }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editService, setEditService] = useState<Service | null>(null)
@@ -50,20 +55,32 @@ export function LaundryServicesView({ businessId, initialServices }: Props) {
                   </TableCell>
                 </TableRow>
               ) : (
-                services.map(s => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-medium">{s.name}</TableCell>
-                    <TableCell>{s.description ?? <Badge variant="outline">No description</Badge>}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(s.price)}
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditService(s); setDialogOpen(true) }}>
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                services.map(s => {
+                  const revenueShare = getRevenueShare(s)
+                  return (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <div>{s.description ?? <Badge variant="outline">No description</Badge>}</div>
+                          {revenueShare && (
+                            <Badge variant="secondary">
+                              Split {revenueShare.owner_share_percent}% / {revenueShare.worker_share_percent}%
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(s.price)}
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditService(s); setDialogOpen(true) }}>
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>
@@ -79,7 +96,7 @@ export function LaundryServicesView({ businessId, initialServices }: Props) {
           const supabase = createClient()
           const { data } = await supabase
             .from('services')
-            .select('*')
+            .select('*, revenue_share:service_revenue_shares(*)')
             .eq('business_id', businessId)
             .eq('is_active', true)
             .order('name')

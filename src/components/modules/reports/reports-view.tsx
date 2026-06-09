@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/utils/currency'
 import { subDays, format, parseISO, subMonths } from 'date-fns'
+import { StaffPerformanceReport } from './staff-performance-report'
+import type { RevenueScope } from '@/types'
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
@@ -24,6 +26,7 @@ type SaleReportRow = {
 interface Props {
   businessId: string
   modelKeys: string[]
+  revenueScope: RevenueScope
 }
 
 async function fetchSalesReport(businessId: string, days: number) {
@@ -58,7 +61,7 @@ async function fetchRentReport(businessId: string) {
   return data ?? []
 }
 
-export function ReportsView({ businessId, modelKeys }: Props) {
+export function ReportsView({ businessId, modelKeys, revenueScope }: Props) {
   const [period, setPeriod] = useState('30')
   const hasRetail = modelKeys.includes('retail')
   const hasService = modelKeys.includes('service')
@@ -156,6 +159,12 @@ export function ReportsView({ businessId, modelKeys }: Props) {
           </Select>
         )}
       </div>
+
+      {(hasService || revenueScope.mode === 'personal') && (
+        <div className="mb-6">
+          <StaffPerformanceReport businessId={businessId} revenueScope={revenueScope} />
+        </div>
+      )}
 
       {/* Retail Reports */}
       {hasRetail && (

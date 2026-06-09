@@ -9,7 +9,7 @@ export default async function LaundryServicesPage({ params }: { params: Promise<
   const supabase = await createClient()
   const { data: services } = await supabase
     .from('services')
-    .select('*')
+    .select('*, revenue_share:service_revenue_shares(*)')
     .eq('business_id', businessId)
     .eq('is_active', true)
     .order('name')

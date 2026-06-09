@@ -145,6 +145,12 @@ export interface DashboardWidgetConfig {
   config?: Record<string, unknown>
 }
 
+export interface RevenueScope {
+  mode: 'business' | 'personal' | 'hidden'
+  currentUserId: string
+  currentPersonId: string | null
+}
+
 export interface NavigationItem {
   key: string
   label: string
@@ -225,6 +231,7 @@ export interface Customer {
 }
 
 export type PaymentMethod = 'cash' | 'gcash' | 'maya' | 'credit' | 'bank_transfer'
+export type OrderPaymentStatus = 'active' | 'voided'
 export type SaleStatus = 'completed' | 'voided' | 'refunded'
 export type FinancialAccountType = 'cash' | 'ewallet' | 'bank' | 'receivable'
 export type CustomerType = 'walk_in' | 'guest' | 'registered'
@@ -348,6 +355,7 @@ export interface Service {
   metadata: Record<string, unknown>
   created_at: string
   updated_at: string
+  revenue_share?: ServiceRevenueShare | ServiceRevenueShare[] | null
 }
 
 export type LaundryService = Service & {
@@ -361,6 +369,31 @@ export interface OrderStatus {
   sort_order: number
   color: string | null
   is_default: boolean
+  is_terminal: boolean
+  workflow_id: string | null
+  created_at: string
+}
+
+export type WorkflowTransactionType = 'service_order' | 'sale' | 'rental' | 'task'
+
+export interface WorkflowDefinition {
+  id: string
+  business_id: string
+  transaction_type: WorkflowTransactionType
+  name: string
+  description: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTransition {
+  id: string
+  workflow_id: string
+  from_status_id: string | null
+  to_status_id: string
+  label: string | null
+  sort_order: number
   created_at: string
 }
 
@@ -391,6 +424,109 @@ export interface Order {
   order_status?: OrderStatus
   assigned_person?: BusinessPerson | null
   assigned_position?: Position | null
+  order_payments?: OrderPayment[]
+  payment_corrections?: PaymentCorrection[]
+}
+
+export interface OrderPayment {
+  id: string
+  business_id: string
+  order_id: string
+  payment_method: PaymentMethod
+  amount_due: number
+  amount_received: number
+  change_given: number
+  tip_amount: number
+  collected_by: string
+  collected_at: string
+  financial_account_id: string
+  status: OrderPaymentStatus
+  voided_at: string | null
+  voided_by: string | null
+  void_reason: string | null
+  replacement_payment_id: string | null
+  created_at: string
+  financial_account?: FinancialAccount | null
+}
+
+export interface PaymentCorrection {
+  id: string
+  business_id: string
+  order_id: string
+  original_payment_id: string
+  replacement_payment_id: string
+  reason: string
+  corrected_by: string
+  corrected_at: string
+  created_at: string
+  original_payment?: OrderPayment | null
+  replacement_payment?: OrderPayment | null
+}
+
+export interface PaymentCorrectionSettings {
+  business_id: string
+  operator_time_limit_mins: number
+  created_at: string
+  updated_at: string
+}
+
+export type TipDistributionType = 'worker' | 'business' | 'shared'
+
+export interface RevenueSharingSettings {
+  business_id: string
+  owner_share_percent: number
+  worker_share_percent: number
+  tip_distribution: TipDistributionType
+  owner_tip_share_percent: number
+  worker_tip_share_percent: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ServiceRevenueShare {
+  id: string
+  business_id: string
+  service_id: string
+  owner_share_percent: number
+  worker_share_percent: number
+  created_at: string
+  updated_at: string
+}
+
+export interface OrderCompensation {
+  id: string
+  business_id: string
+  order_id: string
+  order_payment_id: string | null
+  service_id: string | null
+  worker_person_id: string | null
+  worker_user_id: string | null
+  service_amount: number
+  owner_share_percent: number
+  worker_share_percent: number
+  owner_revenue_share: number
+  worker_commission_amount: number
+  tip_amount: number
+  owner_tip_amount: number
+  worker_tip_amount: number
+  owner_total_amount: number
+  worker_total_amount: number
+  calculated_at: string
+  created_at: string
+}
+
+export interface StaffPerformanceRow {
+  workerPersonId: string | null
+  workerUserId: string | null
+  employeeName: string
+  positionId: string | null
+  positionName: string | null
+  revenueGenerated: number
+  commissionEarned: number
+  tipsReceived: number
+  totalEarnings: number
+  servicesCompleted: number
+  ordersCompleted: number
 }
 
 export interface LaundryOrder {

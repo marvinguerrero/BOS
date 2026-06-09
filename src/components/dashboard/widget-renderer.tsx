@@ -1,7 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import type { DashboardWidgetConfig } from '@/types'
+import type { DashboardWidgetConfig, RevenueScope } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 const RevenueWidget = dynamic(() => import('../widgets/revenue-widget').then(m => m.RevenueWidget), { ssr: false })
@@ -19,10 +19,11 @@ const AccountBalancesWidget = dynamic(() => import('../widgets/account-balances-
 interface WidgetRendererProps {
   widget: DashboardWidgetConfig
   businessId: string
+  revenueScope: RevenueScope
 }
 
-export function WidgetRenderer({ widget, businessId }: WidgetRendererProps) {
-  const props = { businessId, widget }
+export function WidgetRenderer({ widget, businessId, revenueScope }: WidgetRendererProps) {
+  const props = { businessId, widget, revenueScope }
 
   switch (widget.type) {
     case 'revenue_today':
